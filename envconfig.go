@@ -74,10 +74,10 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -94,8 +94,6 @@ const (
 	defaultDelimiter = ","
 	defaultSeparator = ":"
 )
-
-var envvarNameRe = regexp.MustCompile(`\A[a-zA-Z_][a-zA-Z0-9_]*\z`)
 
 // Error is a custom error type for errors returned by envconfig.
 type Error string
@@ -304,7 +302,6 @@ func processWith(ctx context.Context, i interface{}, l Lookuper, parentNoInit bo
 		}
 
 		// Initialize pointer structs.
-		pointerWasSet := false
 		for ef.Kind() == reflect.Ptr {
 			if ef.IsNil() {
 				if ef.Type().Elem().Kind() != reflect.Struct {
@@ -317,7 +314,6 @@ func processWith(ctx context.Context, i interface{}, l Lookuper, parentNoInit bo
 				// Use an empty struct of the type so we can traverse.
 				ef = reflect.New(ef.Type().Elem()).Elem()
 			} else {
-				pointerWasSet = true
 				ef = ef.Elem()
 			}
 		}
@@ -372,7 +368,7 @@ func processWith(ctx context.Context, i interface{}, l Lookuper, parentNoInit bo
 
 		// The field already has a non-zero value and overwrite is false, do not
 		// overwrite.
-		if (pointerWasSet || !ef.IsZero()) && !opts.Overwrite {
+		if !ef.IsZero() && !opts.Overwrite {
 			continue
 		}
 
@@ -384,7 +380,7 @@ func processWith(ctx context.Context, i interface{}, l Lookuper, parentNoInit bo
 		// If the field already has a non-zero value and there was no value directly
 		// specified, do not overwrite the existing field. We only want to overwrite
 		// when the envvar was provided directly.
-		if (pointerWasSet || !ef.IsZero()) && !found {
+		if !ef.IsZero() && !found {
 			continue
 		}
 
@@ -427,7 +423,7 @@ func keyAndOpts(tag string) (string, *options, error) {
 	parts := strings.Split(tag, ",")
 	key, tagOpts := strings.TrimSpace(parts[0]), parts[1:]
 
-	if key != "" && !envvarNameRe.MatchString(key) {
+	if key != "" && !validateEnv(key) {
 		return "", nil, fmt.Errorf("%q: %w ", key, ErrInvalidEnvvarName)
 	}
 
@@ -688,4 +684,22 @@ func processField(v string, ef reflect.Value, delimiter, separator string, noIni
 	}
 
 	return nil
+}
+
+func validateEnv(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	if (s[0] < 'a' || s[0] > 'z') && s[0] < 'A' || s[0] > 'Z' {
+		return false
+	}
+
+	for _, r := range s {
+		if !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_') {
+			return false
+		}
+	}
+
+	return true
 }
